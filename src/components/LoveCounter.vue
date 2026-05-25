@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import gsap from 'gsap'
 
-const startDate = new Date('2024-11-15')
+const startDate = new Date('2026-02-10')
 
 const now = ref(new Date())
 setInterval(() => { now.value = new Date() }, 1000)
