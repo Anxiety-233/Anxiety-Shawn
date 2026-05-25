@@ -7,6 +7,7 @@ import LoveLetter from './components/LoveLetter.vue'
 import LoveCard from './components/LoveCard.vue'
 import QuizGame from './components/QuizGame.vue'
 import CatGame from './components/CatGame.vue'
+import CatchGame from './components/CatchGame.vue'
 import WishList from './components/WishList.vue'
 import StarBackground from './components/StarBackground.vue'
 
@@ -20,6 +21,7 @@ const navItems = [
   { label: '抽卡', icon: '🎴' },
   { label: '默契', icon: '🎯' },
   { label: '小猫', icon: '🐱' },
+  { label: '接爱心', icon: '💝' },
   { label: '愿望', icon: '⭐' },
 ]
 
@@ -72,7 +74,8 @@ function goTo(page) {
         <LoveCard v-if="currentPage === 2" />
         <QuizGame v-if="currentPage === 3" />
         <CatGame v-if="currentPage === 4" />
-        <WishList v-if="currentPage === 5" />
+        <CatchGame v-if="currentPage === 5" />
+        <WishList v-if="currentPage === 6" />
       </div>
     </template>
   </div>
@@ -102,16 +105,17 @@ function goTo(page) {
 .nav-inner {
   display: flex;
   justify-content: center;
-  gap: 6px;
-  max-width: 500px;
+  gap: 4px;
+  max-width: 580px;
   margin: 0 auto;
+  flex-wrap: wrap;
 }
 
 .nav-bar button {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 8px 14px;
+  gap: 3px;
+  padding: 7px 11px;
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
