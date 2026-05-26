@@ -326,4 +326,5 @@ function handleEnter() {
   .moon { width: 60px; height: 60px; right: -10px; top: -20px; }
   .planet-1 { width: 35px; height: 35px; left: -10px; }
 }
+
 </style>
