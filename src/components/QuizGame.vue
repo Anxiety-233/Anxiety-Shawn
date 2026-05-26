@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import gsap from 'gsap'
 
 const allQuestions = [
@@ -26,6 +26,11 @@ const streak = ref(0)
 const bestStreak = ref(0)
 let timerInterval = null
 
+// 特效状态
+const particles = ref([])
+let pId = 0
+const comboText = ref('')
+
 function shuffle(arr) {
   const a = [...arr]
   for (let i = a.length - 1; i > 0; i--) {
@@ -45,21 +50,60 @@ function startQuiz(count) {
   bestStreak.value = 0
   mode.value = 'playing'
   startTimer()
+  animateInQuestion()
 }
 
 function startTimer() {
   timer.value = 10
   clearInterval(timerInterval)
   timerInterval = setInterval(() => {
-    timer.value--
+    timer.value -= 0.05 // 更平滑的进度条更新 (50ms)
     if (timer.value <= 0) {
       clearInterval(timerInterval)
-      selectAnswer(-1)
+      timer.value = 0
+      selectAnswer(-1, null) // 超时
     }
-  }, 1000)
+  }, 50)
 }
 
-function selectAnswer(idx) {
+function spawnParticles(x, y, isCorrect) {
+  for (let i = 0; i < (isCorrect ? 15 : 5); i++) {
+    const id = pId++
+    particles.value.push({
+      id,
+      x, y,
+      tx: (Math.random() - 0.5) * 200,
+      ty: (Math.random() - 0.5) * 200 - 50,
+      size: Math.random() * 15 + 10,
+      emoji: isCorrect ? ['❤️', '💖', '✨'][Math.floor(Math.random()*3)] : '💧'
+    })
+    setTimeout(() => {
+      particles.value = particles.value.filter(p => p.id !== id)
+    }, 1000)
+  }
+}
+
+function showCombo(amount) {
+  comboText.value = `COMBO x${amount}!`
+  nextTick(() => {
+    gsap.fromTo('.combo-popup',
+        { scale: 0.5, opacity: 0, y: 20 },
+        { scale: 1.2, opacity: 1, y: -20, duration: 0.4, ease: 'back.out(2)', yoyo: true, repeat: 1, onComplete: () => { comboText.value = '' } }
+    )
+  })
+}
+
+function animateInQuestion() {
+  nextTick(() => {
+    gsap.fromTo('.q-text', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' })
+    gsap.fromTo('.option-btn',
+        { opacity: 0, x: -30 },
+        { opacity: 1, x: 0, duration: 0.4, stagger: 0.1, ease: 'back.out(1.2)' }
+    )
+  })
+}
+
+function selectAnswer(idx, event) {
   if (answered.value) return
   clearInterval(timerInterval)
   selectedIdx.value = idx
@@ -67,114 +111,161 @@ function selectAnswer(idx) {
 
   const correct = questions.value[currentQ.value].answer
   const isCorrect = idx === correct
+
+  // 触发粒子
+  if (event) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    spawnParticles(rect.left + rect.width / 2, rect.top + rect.height / 2, isCorrect)
+  } else {
+    spawnParticles(window.innerWidth / 2, window.innerHeight / 2, false)
+  }
+
+  // 弹窗震动与算分
   if (isCorrect) {
-    const timeBonus = Math.max(0, timer.value)
-    const streakBonus = streak.value >= 3 ? streak.value : 0
+    const timeBonus = Math.floor(Math.max(0, timer.value) * 2)
+    const streakBonus = streak.value >= 2 ? streak.value * 5 : 0
     scores.value += 10 + timeBonus + streakBonus
     streak.value++
     if (streak.value > bestStreak.value) bestStreak.value = streak.value
+
+    if (streak.value >= 2) showCombo(streak.value)
   } else {
     streak.value = 0
+    gsap.fromTo('.quiz-card', { x: -10 }, { x: 10, duration: 0.1, yoyo: true, repeat: 3, clearProps: 'x' })
   }
 
+  // 延迟进入下一题
   setTimeout(() => {
     if (currentQ.value < questions.value.length - 1) {
       currentQ.value++
       answered.value = false
       selectedIdx.value = -1
       startTimer()
-      gsap.from('.quiz-question', { opacity: 0, x: 40, duration: 0.4, ease: 'power3.out' })
+      animateInQuestion()
     } else {
       mode.value = 'result'
       clearInterval(timerInterval)
-      setTimeout(() => {
-        gsap.from('.result-card', { scale: 0.7, opacity: 0, duration: 0.8, ease: 'back.out(1.7)' })
-      }, 10)
+      nextTick(() => {
+        gsap.from('.result-card', { scale: 0.8, opacity: 0, y: 50, duration: 0.8, ease: 'elastic.out(1, 0.6)' })
+        gsap.from('.stat', { opacity: 0, y: 20, duration: 0.5, stagger: 0.2, delay: 0.3 })
+      })
     }
-  }, 800)
+  }, 1200)
 }
 
 const resultTitle = computed(() => {
-  const pct = scores.value / (questions.value.length * 20)
-  if (pct >= 0.8) return { emoji: '💯', title: '心有灵犀！', text: '你完全懂我的心。' }
-  if (pct >= 0.5) return { emoji: '💕', title: '默契不错！', text: '我们越来越懂彼此了。' }
-  return { emoji: '🥰', title: '没关系~', text: '不管选什么，答案都是你。' }
+  const pct = scores.value / (questions.value.length * 30) // 大致满分评估
+  if (pct >= 0.8) return { emoji: '💯', title: '心有灵犀！', text: '简直是我肚子里的蛔虫，太懂我了！' }
+  if (pct >= 0.5) return { emoji: '💕', title: '默契不错！', text: '我们越来越懂彼此了哦。' }
+  return { emoji: '🥰', title: '没关系~', text: '不管选什么，最后的答案都是你。' }
 })
 </script>
 
 <template>
   <div class="quiz-game">
-    <h2 class="section-title">默契小游戏</h2>
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
 
-    <div v-if="mode === 'menu'" class="menu">
+    <div class="particles-container">
+      <div
+          v-for="p in particles"
+          :key="p.id"
+          class="particle"
+          :style="{ left: p.x + 'px', top: p.y + 'px', '--tx': p.tx + 'px', '--ty': p.ty + 'px', fontSize: p.size + 'px' }"
+      >{{ p.emoji }}</div>
+    </div>
+
+    <div v-if="comboText" class="combo-popup">{{ comboText }}</div>
+
+    <h2 class="section-title" v-if="mode !== 'playing'">默契大考验</h2>
+
+    <div v-if="mode === 'menu'" class="menu glass-panel">
       <p class="section-sub">测测我们的心有多近</p>
       <div class="mode-cards">
         <div class="mode-card" @click="startQuiz(5)">
+          <div class="card-glare"></div>
           <span class="mode-emoji">⚡</span>
-          <span class="mode-name">快速模式</span>
-          <span class="mode-desc">5题 · 限时10秒</span>
+          <span class="mode-name">心跳快问</span>
+          <span class="mode-desc">5题 · 争分夺秒</span>
         </div>
         <div class="mode-card" @click="startQuiz(10)">
+          <div class="card-glare"></div>
           <span class="mode-emoji">🎯</span>
-          <span class="mode-name">完整模式</span>
-          <span class="mode-desc">10题 · 限时10秒</span>
+          <span class="mode-name">灵魂伴侣</span>
+          <span class="mode-desc">10题 · 深度考验</span>
         </div>
       </div>
-      <p class="menu-tip">答对得分，速度越快分越高，连续答对有连击加成！</p>
+      <p class="menu-tip">✨ 答对得分，速度越快分越高，连续答对有高额爆分加成！</p>
     </div>
 
     <template v-if="mode === 'playing'">
+      <div class="timer-bar-container" :class="{ danger: timer <= 3 }">
+        <div class="timer-bar-fill" :style="{ width: (timer / 10) * 100 + '%' }"></div>
+      </div>
+
       <div class="game-hud">
-        <span class="hud-score">{{ scores }}分</span>
-        <span class="hud-timer" :class="{ urgent: timer <= 3 }">{{ timer }}s</span>
-        <span v-if="streak >= 3" class="hud-streak">🔥x{{ streak }}</span>
+        <div class="hud-item score">
+          <span class="hud-icon">💎</span>
+          <span>{{ scores }}</span>
+        </div>
+        <div class="hud-item progress-text">
+          <span>第 {{ currentQ + 1 }} / {{ questions.length }} 题</span>
+        </div>
+        <div class="hud-item streak" :class="{ active: streak >= 2 }">
+          <span class="hud-icon">🔥</span>
+          <span>{{ streak }}</span>
+        </div>
       </div>
 
-      <div class="progress">
-        <div class="progress-bar" :style="{ width: ((currentQ + 1) / questions.length * 100) + '%' }"></div>
-      </div>
-
-      <div class="quiz-question">
-        <p class="q-number">{{ currentQ + 1 }} / {{ questions.length }}</p>
+      <div class="quiz-card glass-panel">
         <h3 class="q-text">{{ questions[currentQ].q }}</h3>
+
         <div class="options">
           <button
-            v-for="(opt, i) in questions[currentQ].options"
-            :key="i"
-            class="option-btn"
-            :class="{
+              v-for="(opt, i) in questions[currentQ].options"
+              :key="i"
+              class="option-btn"
+              :class="{
               selected: selectedIdx === i,
               correct: answered && i === questions[currentQ].answer,
               wrong: answered && selectedIdx === i && i !== questions[currentQ].answer
             }"
-            :disabled="answered"
-            @click="selectAnswer(i)"
+              :disabled="answered"
+              @click="selectAnswer(i, $event)"
           >
-            <span class="opt-letter">{{ ['A', 'B', 'C', 'D'][i] }}</span>
-            <span class="opt-text">{{ opt }}</span>
-            <span v-if="answered && i === questions[currentQ].answer" class="opt-check">✓</span>
+            <div class="opt-content">
+              <span class="opt-letter">{{ ['A', 'B', 'C', 'D'][i] }}</span>
+              <span class="opt-text">{{ opt }}</span>
+            </div>
+            <span v-if="answered && i === questions[currentQ].answer" class="opt-feedback correct-mark">✓</span>
+            <span v-if="answered && selectedIdx === i && i !== questions[currentQ].answer" class="opt-feedback wrong-mark">✗</span>
           </button>
         </div>
       </div>
     </template>
 
-    <div v-if="mode === 'result'" class="result-card">
-      <div class="result-emoji">{{ resultTitle.emoji }}</div>
-      <h3 class="result-title">{{ resultTitle.title }}</h3>
-      <p class="result-text">{{ resultTitle.text }}</p>
+    <div v-if="mode === 'result'" class="result-card glass-panel">
+      <div class="result-header">
+        <div class="result-emoji">{{ resultTitle.emoji }}</div>
+        <h3 class="result-title">{{ resultTitle.title }}</h3>
+        <p class="result-text">{{ resultTitle.text }}</p>
+      </div>
+
       <div class="result-stats">
-        <div class="stat">
+        <div class="stat primary">
+          <span class="stat-label">总得分</span>
           <span class="stat-val">{{ scores }}</span>
-          <span class="stat-label">总分</span>
         </div>
+        <div class="stat-divider"></div>
         <div class="stat">
+          <span class="stat-label">最高连击</span>
           <span class="stat-val">{{ bestStreak }}</span>
-          <span class="stat-label">最长连击</span>
         </div>
       </div>
+
       <div class="result-actions">
-        <button class="restart-btn" @click="startQuiz(questions.length)">再玩一次</button>
-        <button class="back-btn" @click="mode = 'menu'">返回</button>
+        <button class="game-btn restart-btn" @click="startQuiz(questions.length)">再测一次</button>
+        <button class="game-btn back-btn" @click="mode = 'menu'">返回大厅</button>
       </div>
     </div>
   </div>
@@ -186,143 +277,130 @@ const resultTitle = computed(() => {
   flex-direction: column;
   align-items: center;
   min-height: calc(100vh - 76px);
-  padding: 40px 20px;
-}
-
-.section-title {
-  font-size: 1.6rem;
-  font-weight: 600;
-  margin-bottom: 16px;
-  background: linear-gradient(135deg, #fff, #f0c4ff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.section-sub {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.4);
-  margin-bottom: 32px;
-}
-
-.menu { text-align: center; }
-
-.mode-cards {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-bottom: 20px;
-}
-
-.mode-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 28px 32px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  cursor: pointer;
-  transition: all 0.3s;
-  min-width: 150px;
-}
-
-.mode-card:hover {
-  background: rgba(255, 107, 157, 0.08);
-  border-color: rgba(255, 107, 157, 0.25);
-  transform: translateY(-4px);
-}
-
-.mode-emoji { font-size: 32px; }
-.mode-name { font-size: 1rem; font-weight: 500; color: rgba(255, 255, 255, 0.9); }
-.mode-desc { font-size: 0.75rem; color: rgba(255, 255, 255, 0.4); }
-.menu-tip { font-size: 0.75rem; color: rgba(255, 255, 255, 0.3); }
-
-.game-hud {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  margin-bottom: 16px;
-  font-size: 0.85rem;
-}
-
-.hud-score { color: #ff6b9d; font-weight: 600; }
-.hud-timer { color: rgba(255, 255, 255, 0.6); font-variant-numeric: tabular-nums; }
-.hud-timer.urgent { color: #ff4444; animation: blink 0.5s infinite; }
-.hud-streak { color: #ffd700; font-weight: 600; }
-
-@keyframes blink { 50% { opacity: 0.5; } }
-
-.progress {
-  width: 100%;
-  max-width: 400px;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
-  margin-bottom: 32px;
+  padding: 40px 15px;
+  position: relative;
   overflow: hidden;
+  background: radial-gradient(circle at top, #1a1525, #0a0a10);
+  font-family: 'PingFang SC', sans-serif;
 }
 
-.progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #ff6b9d, #c44dff);
-  border-radius: 2px;
-  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* 氛围光晕 */
+.glow-orb { position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.15; pointer-events: none; z-index: 0; }
+.orb-1 { width: 350px; height: 350px; background: #ff6b9d; top: -10%; left: -10%; animation: drift 10s ease-in-out infinite alternate; }
+.orb-2 { width: 300px; height: 300px; background: #764ba2; bottom: 10%; right: -10%; animation: drift 12s ease-in-out infinite alternate-reverse; }
+@keyframes drift { 0% { transform: translate(0, 0); } 100% { transform: translate(50px, 30px); } }
 
-.quiz-question { max-width: 420px; width: 100%; text-align: center; }
-.q-number { font-size: 0.75rem; color: rgba(255, 255, 255, 0.3); margin-bottom: 16px; letter-spacing: 2px; }
-.q-text { font-size: 1.3rem; margin-bottom: 32px; color: rgba(255, 255, 255, 0.9); font-weight: 500; line-height: 1.5; }
-
-.options { display: flex; flex-direction: column; gap: 10px; }
-
-.option-btn {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 15px 18px;
-  border-radius: 14px;
+.glass-panel {
   background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 0.9rem;
-  text-align: left;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  position: relative;
+  z-index: 2;
 }
 
-.option-btn:hover:not(:disabled) { background: rgba(255, 107, 157, 0.08); border-color: rgba(255, 107, 157, 0.25); transform: translateX(4px); }
-.option-btn.selected { background: linear-gradient(135deg, rgba(255, 107, 157, 0.15), rgba(196, 77, 255, 0.1)); border-color: rgba(255, 107, 157, 0.4); color: #fff; }
-.option-btn.correct { background: rgba(76, 175, 80, 0.15); border-color: rgba(76, 175, 80, 0.5); color: #4caf50; }
-.option-btn.wrong { background: rgba(244, 67, 54, 0.1); border-color: rgba(244, 67, 54, 0.3); color: rgba(255, 255, 255, 0.5); }
+.section-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 5px; background: linear-gradient(135deg, #fff, #f0c4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.section-sub { font-size: 0.9rem; color: rgba(255, 255, 255, 0.5); margin-bottom: 30px; }
 
-.opt-letter { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: rgba(255, 255, 255, 0.06); font-size: 0.8rem; font-weight: 600; flex-shrink: 0; }
-.opt-text { flex: 1; }
-.opt-check { color: #4caf50; font-weight: 600; }
-
-.result-card {
-  text-align: center;
-  background: linear-gradient(145deg, rgba(255, 107, 157, 0.06), rgba(196, 77, 255, 0.04));
-  border: 1px solid rgba(255, 107, 157, 0.2);
-  border-radius: 28px;
-  padding: 48px 40px;
-  max-width: 360px;
-  width: 100%;
+/* 粒子系统 */
+.particles-container { position: fixed; inset: 0; pointer-events: none; z-index: 100; overflow: hidden; }
+.particle {
+  position: absolute; pointer-events: none; opacity: 0;
+  animation: burst 1s cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+  filter: drop-shadow(0 2px 5px rgba(255, 107, 157, 0.5));
+  transform: translate(-50%, -50%); /* 居中鼠标点击点 */
+}
+@keyframes burst {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1.5) rotate(45deg); opacity: 0; }
 }
 
-.result-emoji { font-size: 56px; margin-bottom: 16px; }
-.result-title { font-size: 1.5rem; margin-bottom: 12px; background: linear-gradient(135deg, #ff6b9d, #c44dff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.result-text { font-size: 0.95rem; color: rgba(255, 255, 255, 0.6); margin-bottom: 24px; }
+/* COMBO 弹窗 */
+.combo-popup {
+  position: fixed; top: 30%; left: 50%; transform: translateX(-50%);
+  font-size: 3rem; font-weight: 900; font-style: italic; z-index: 100; pointer-events: none;
+  background: linear-gradient(135deg, #ffd700, #ff5722); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 5px 15px rgba(255, 87, 34, 0.6));
+}
 
-.result-stats { display: flex; gap: 32px; justify-content: center; margin-bottom: 28px; }
-.stat { text-align: center; }
-.stat-val { display: block; font-size: 1.8rem; font-weight: 700; color: #ff6b9d; }
-.stat-label { font-size: 0.75rem; color: rgba(255, 255, 255, 0.4); }
+/* --- 菜单区 --- */
+.menu { padding: 40px 20px; max-width: 450px; width: 100%; text-align: center; }
+.mode-cards { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; margin-bottom: 25px; }
+.mode-card {
+  flex: 1; min-width: 140px; padding: 30px 20px; border-radius: 16px; cursor: pointer;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); position: relative; overflow: hidden;
+}
+.card-glare { position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%); opacity: 0; transition: opacity 0.3s; }
+.mode-card:hover { transform: translateY(-5px); background: rgba(255, 107, 157, 0.08); border-color: rgba(255, 107, 157, 0.3); box-shadow: 0 10px 25px rgba(255, 107, 157, 0.2); }
+.mode-card:hover .card-glare { opacity: 1; }
+.mode-emoji { font-size: 38px; display: block; margin-bottom: 12px; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3)); }
+.mode-name { display: block; font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.mode-desc { display: block; font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); }
+.menu-tip { font-size: 0.8rem; color: #ffb6c1; opacity: 0.8; line-height: 1.5; }
 
-.result-actions { display: flex; gap: 12px; justify-content: center; }
-.restart-btn { padding: 10px 24px; border-radius: 20px; background: rgba(255, 107, 157, 0.2); border: 1px solid rgba(255, 107, 157, 0.3); color: #ff6b9d; font-size: 0.85rem; transition: all 0.3s; }
-.restart-btn:hover { background: rgba(255, 107, 157, 0.3); }
-.back-btn { padding: 10px 24px; border-radius: 20px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.6); font-size: 0.85rem; transition: all 0.3s; }
-.back-btn:hover { background: rgba(255, 255, 255, 0.1); }
+/* --- 游戏区 --- */
+.timer-bar-container { position: fixed; top: 0; left: 0; width: 100%; height: 6px; background: rgba(0,0,0,0.3); z-index: 50; }
+.timer-bar-fill { height: 100%; background: linear-gradient(90deg, #00f2fe, #4facfe); transition: width 0.05s linear; box-shadow: 0 0 15px rgba(79, 172, 254, 0.6); }
+.timer-bar-container.danger .timer-bar-fill { background: linear-gradient(90deg, #ff0844, #ffb199); box-shadow: 0 0 20px rgba(255, 8, 68, 0.8); }
+.timer-bar-container.danger { animation: screenRedFlash 0.5s infinite; }
+@keyframes screenRedFlash { 0%, 100% { box-shadow: 0 0 0 transparent; } 50% { box-shadow: 0 10px 50px rgba(255, 0, 0, 0.2) inset; } }
+
+.game-hud { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 450px; margin-bottom: 20px; z-index: 2; }
+.hud-item { display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.4); padding: 8px 16px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.05); font-weight: 600; font-size: 0.95rem; }
+.hud-icon { font-size: 1.1rem; }
+.score { color: #4facfe; }
+.streak { color: rgba(255,255,255,0.3); transition: all 0.3s; }
+.streak.active { color: #ff9800; border-color: rgba(255, 152, 0, 0.4); box-shadow: 0 0 15px rgba(255, 152, 0, 0.2); }
+.progress-text { background: transparent; border: none; color: rgba(255,255,255,0.5); font-size: 0.85rem; }
+
+.quiz-card { padding: 40px 25px; width: 100%; max-width: 450px; }
+.q-text { font-size: 1.35rem; color: #fff; margin-bottom: 30px; font-weight: 600; line-height: 1.5; text-align: center; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+
+.options { display: flex; flex-direction: column; gap: 12px; }
+.option-btn {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 20px; border-radius: 16px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8); cursor: pointer; transition: all 0.2s; overflow: hidden; position: relative;
+}
+.opt-content { display: flex; align-items: center; gap: 15px; }
+.opt-letter { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 8px; background: rgba(255, 255, 255, 0.1); font-weight: 700; font-size: 0.9rem; }
+.opt-text { font-size: 1rem; font-weight: 500; text-align: left; }
+
+.option-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); transform: scale(1.02); }
+.option-btn.selected { transform: scale(0.98); opacity: 0.8; }
+
+/* 结算状态高亮 */
+.option-btn.correct { background: rgba(76, 175, 80, 0.2); border-color: #4caf50; color: #fff; box-shadow: 0 0 20px rgba(76, 175, 80, 0.3); }
+.option-btn.correct .opt-letter { background: #4caf50; color: #fff; }
+.option-btn.wrong { background: rgba(244, 67, 54, 0.15); border-color: rgba(244, 67, 54, 0.4); opacity: 0.6; }
+.option-btn.wrong .opt-letter { background: rgba(244, 67, 54, 0.5); }
+
+.opt-feedback { font-size: 1.4rem; font-weight: 900; animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.correct-mark { color: #4caf50; text-shadow: 0 0 10px #4caf50; }
+.wrong-mark { color: #f44336; }
+@keyframes popIn { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+
+/* --- 结算区 --- */
+.result-card { padding: 50px 30px; width: 100%; max-width: 400px; text-align: center; }
+.result-header { margin-bottom: 35px; }
+.result-emoji { font-size: 64px; margin-bottom: 15px; filter: drop-shadow(0 10px 15px rgba(0,0,0,0.3)); animation: float 3s ease-in-out infinite; }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+.result-title { font-size: 1.8rem; font-weight: 800; color: #fff; margin-bottom: 10px; }
+.result-text { font-size: 1rem; color: #ffb6c1; line-height: 1.5; }
+
+.result-stats { display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); border-radius: 20px; padding: 20px; margin-bottom: 35px; border: 1px solid rgba(255,255,255,0.05); }
+.stat { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.stat-divider { width: 1px; height: 40px; background: rgba(255,255,255,0.1); }
+.stat-label { font-size: 0.8rem; color: rgba(255,255,255,0.5); }
+.stat-val { font-size: 1.8rem; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; }
+.primary .stat-val { color: #ff6b9d; text-shadow: 0 0 15px rgba(255, 107, 157, 0.4); font-size: 2.2rem; }
+
+.result-actions { display: flex; gap: 15px; justify-content: center; }
+.game-btn { padding: 14px 28px; border-radius: 30px; font-weight: 600; font-size: 1rem; cursor: pointer; transition: all 0.3s; border: none; }
+.restart-btn { background: linear-gradient(135deg, #ff6b9d, #c44dff); color: #fff; box-shadow: 0 5px 20px rgba(196, 77, 255, 0.3); }
+.restart-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(196, 77, 255, 0.5); }
+.back-btn { background: rgba(255,255,255,0.08); color: #fff; border: 1px solid rgba(255,255,255,0.15); }
+.back-btn:hover { background: rgba(255,255,255,0.15); transform: translateY(-3px); }
 </style>
