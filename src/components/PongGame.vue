@@ -34,12 +34,18 @@ const state = {
 
 function initPeer() {
   status.value = 'connecting'
-  const isSecure = window.location.protocol === 'https:'
+
+  const originalFetch = window.fetch
+  window.fetch = (url, opts = {}) => {
+    opts.headers = { ...opts.headers, 'ngrok-skip-browser-warning': 'true' }
+    return originalFetch(url, opts)
+  }
+
   peer = new Peer({
     host: 'glossiest-samuel-complemental.ngrok-free.dev',
-    port: isSecure ? 443 : 80,
+    port: 443,
     path: '/',
-    secure: isSecure
+    secure: true
   })
 
   peer.on('open', (id) => {
