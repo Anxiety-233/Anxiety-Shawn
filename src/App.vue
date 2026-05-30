@@ -10,6 +10,7 @@ import CatGame from './components/CatGame.vue'
 import CatchGame from './components/CatchGame.vue'
 import WishList from './components/WishList.vue'
 import Picture from './components/Picture.vue'
+import PongGame from './components/PongGame.vue'
 import StarBackground from './components/StarBackground.vue'
 
 const currentPage = ref(0)
@@ -24,7 +25,8 @@ const navItems = [
   { label: '小猫', icon: '🐱' },
   { label: '接爱心', icon: '💝' },
   { label: '愿望', icon: '⭐' },
-  { label: '照片', icon: '📷'}
+  { label: '照片', icon: '📷'},
+  { label: '对战', icon: '🏓'}
 ]
 
 function enter() {
@@ -79,6 +81,7 @@ function goTo(page) {
         <CatchGame v-if="currentPage === 5" />
         <WishList v-if="currentPage === 6" />
         <Picture v-if="currentPage === 7" />
+        <PongGame v-if="currentPage === 8" />
       </div>
     </template>
   </div>
