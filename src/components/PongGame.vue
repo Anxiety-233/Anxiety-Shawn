@@ -34,11 +34,12 @@ const state = {
 
 function initPeer() {
   status.value = 'connecting'
+  const isSecure = window.location.protocol === 'https:'
   peer = new Peer({
-    host: 'anxiety12.fucku.top',
-    port: 80,
+    host: 'glossiest-samuel-complemental.ngrok-free.dev',
+    port: isSecure ? 443 : 80,
     path: '/',
-    secure: false
+    secure: isSecure
   })
 
   peer.on('open', (id) => {
